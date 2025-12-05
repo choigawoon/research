@@ -1,8 +1,18 @@
 # AI Code Agent 비교 분석 리포트
 
-**분석 대상**
-- VSCode Copilot Chat (Microsoft) - VSCode Extension
-- Gemini CLI (Google) - Command-Line Interface
+## 분석 대상
+
+### VSCode Copilot Chat (Microsoft)
+- **타입**: VSCode Extension
+- **GitHub**: https://github.com/microsoft/vscode-copilot-chat
+- **분석 시점 Commit**: `3b825b0cacda0a5df1cfcdf58140e68f99d7b8bf`
+- **Commit 일자**: 2025-12-05 03:55:22 UTC
+
+### Gemini CLI (Google)
+- **타입**: Command-Line Interface
+- **GitHub**: https://github.com/google-gemini/gemini-cli
+- **분석 시점 Commit**: `934b309b4cc66925d59ec671b1a8eb2bd44ef8ef`
+- **Commit 일자**: 2025-12-05 04:42:57 UTC
 
 **분석 일자**: 2025-12-05
 
