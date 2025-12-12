@@ -1,7 +1,7 @@
 # Slack-First AI Company Platform - POC 분석 및 설계 보고서
 
 **작성일**: 2025-12-12
-**버전**: v0.1 (초안)
+**버전**: v0.2
 **상태**: 검토 중
 
 ---
@@ -9,13 +9,16 @@
 ## 목차
 
 1. [비전 및 핵심 아이디어](#1-비전-및-핵심-아이디어)
-2. [3-레이어 아키텍처](#2-3-레이어-아키텍처)
-3. [레이어별 솔루션 분석](#3-레이어별-솔루션-분석)
-4. [MVP 전략: 바로 돌아가는 제품부터](#4-mvp-전략-바로-돌아가는-제품부터)
-5. [의사결정 포인트](#5-의사결정-포인트)
-6. [구현 로드맵](#6-구현-로드맵)
-7. [리스크 및 미결 사항](#7-리스크-및-미결-사항)
-8. [다음 단계](#8-다음-단계)
+2. [대전제: Git Repo 중심 아키텍처](#2-대전제-git-repo-중심-아키텍처)
+3. [결과물 형태](#3-결과물-형태)
+4. [3-레이어 아키텍처 상세](#4-3-레이어-아키텍처-상세)
+5. [격리 배포 환경 및 PR 플로우](#5-격리-배포-환경-및-pr-플로우)
+6. [레이어별 솔루션 분석](#6-레이어별-솔루션-분석)
+7. [MVP 전략: 바로 돌아가는 제품부터](#7-mvp-전략-바로-돌아가는-제품부터)
+8. [의사결정 포인트](#8-의사결정-포인트)
+9. [구현 로드맵](#9-구현-로드맵)
+10. [리스크 및 미결 사항](#10-리스크-및-미결-사항)
+11. [다음 단계](#11-다음-단계)
 
 ---
 
@@ -38,86 +41,380 @@
 | **비동기 작업** | AI가 작업하는 동안 다른 일 가능 |
 | **히스토리 자동 기록** | 모든 의사결정 과정이 Slack에 기록됨 |
 
-### 1.3 목표 사용자 시나리오
-
-```
-[시나리오 1: 새 기능 개발]
-PM: "@claude 로그인 페이지에 소셜 로그인 추가해줘"
-Claude: "네, GitHub과 Google OAuth를 추가하겠습니다.
-        작업 시작하겠습니다. 완료되면 프리뷰 URL 공유드릴게요."
-...
-Claude: "완료했습니다!
-        - 프리뷰: https://pr-123-app.example.com
-        - PR: https://github.com/org/repo/pull/123"
-디자이너: "구글 버튼 색상 가이드라인에 맞게 수정해주세요"
-Claude: "수정했습니다. 프리뷰 새로고침 해주세요."
-```
-
 ---
 
-## 2. 3-레이어 아키텍처
+## 2. 대전제: Git Repo 중심 아키텍처
 
-### 2.1 개요
+### 2.1 핵심 원칙
+
+> **"모든 주제/제품은 반드시 Git Repo URL이 존재해야 한다"**
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     LAYER 1: 상위개념 (Command)                  │
-│            Slack에서 굵직한 작업들, 의사결정 수행                    │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                        Slack                            │    │
-│  │    - 요구사항 논의, 의사결정                               │    │
-│  │    - AI에게 작업 지시                                     │    │
-│  │    - 진행 상황 확인, 피드백                               │    │
-│  └─────────────────────────────────────────────────────────┘    │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     LAYER 2: 중위개념 (Canvas)                   │
-│            브레인스토밍, UI/UX 관점 작업, 화면 단위 작업              │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    Web Canvas UI                        │    │
-│  │    - 실시간 프리뷰                                        │    │
-│  │    - 시각적 피드백                                        │    │
-│  │    - 디자인/UX 조정                                       │    │
-│  └─────────────────────────────────────────────────────────┘    │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     LAYER 3: 로우레벨 (Code)                     │
-│               실제 코드를 들여다보고 수정하는 작업환경                 │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    IDE / CLI                            │    │
-│  │    - 코드 수정                                           │    │
-│  │    - 디버깅                                              │    │
-│  │    - 테스트 실행                                          │    │
-│  └─────────────────────────────────────────────────────────┘    │
+│                     Git Repository (Source of Truth)             │
+│                                                                   │
+│  github.com/org/product-name                                     │
+│  ├── src/                    # 소스 코드                          │
+│  ├── docs/                   # 리서치, 의사결정 문서               │
+│  │   ├── research/           # 시장/기술 리서치                   │
+│  │   ├── decisions/          # 의사결정 기록 (ADR)                │
+│  │   └── specs/              # 기능 명세                          │
+│  ├── .github/                # PR 템플릿, 워크플로우               │
+│  └── README.md               # 프로젝트 개요                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 레이어 간 전환
+### 2.2 Repo가 중심인 이유
 
-| 전환 | 트리거 | 예시 |
-|-----|-------|------|
-| L1 → L2 | "화면으로 보고 싶어" | Slack에서 Canvas UI 링크 공유 |
-| L1 → L3 | "코드 직접 수정할게" | Slack에서 IDE/CLI 세션 연결 |
-| L2 → L1 | "팀에 공유할게" | Canvas에서 Slack 채널로 스냅샷 전송 |
-| L2 → L3 | "이 부분 코드 보고 싶어" | Canvas에서 해당 파일 IDE로 열기 |
-| L3 → L1 | "PR 만들었어" | IDE에서 Slack으로 PR 링크 공유 |
-| L3 → L2 | "프리뷰 확인해봐" | IDE에서 Canvas 프리뷰 URL 열기 |
+| 이유 | 설명 |
+|-----|------|
+| **단일 진실 소스** | 코드, 문서, 히스토리가 한 곳에 |
+| **버전 관리** | 모든 변경 사항 추적 가능 |
+| **협업 표준** | PR, Issue, Review 등 검증된 협업 방식 |
+| **자동화 기반** | CI/CD, 프리뷰 배포 트리거 가능 |
+| **레이어 간 연결** | 모든 레이어가 같은 repo를 바라봄 |
+
+### 2.3 Slack Thread ↔ Git Repo 매핑
+
+```
+Slack Workspace
+├── #product-alpha (채널)
+│   └── Thread: "로그인 기능 논의"
+│       ├── 연결된 Repo: github.com/org/product-alpha
+│       ├── 현재 Branch: feature/login
+│       └── 프리뷰 URL: https://feature-login.product-alpha.preview.dev
+│
+├── #product-beta (채널)
+│   └── Thread: "결제 시스템 설계"
+│       ├── 연결된 Repo: github.com/org/product-beta
+│       └── ...
+```
 
 ---
 
-## 3. 레이어별 솔루션 분석
+## 3. 결과물 형태
 
-### 3.1 LAYER 1: 상위개념 (Slack Integration)
+### 3.1 두 가지 결과물 유형
+
+#### Type A: 웹앱/웹콘텐츠 (실시간 확인용)
+
+> **URL로 바로 접근해서 확인할 수 있는 형태**
+
+```
+결과물 예시:
+- https://feature-login.product-alpha.preview.dev (프리뷰)
+- https://product-alpha.example.com (프로덕션)
+
+특징:
+- 대화 중 즉시 확인 가능
+- 변경사항 실시간 반영
+- 비개발자도 바로 피드백 가능
+```
+
+#### Type B: 문서화 (보고서/기록용)
+
+> **GitHub Repo에 Markdown으로 정리되어 나중에 참조**
+
+```
+결과물 예시:
+- docs/research/market-analysis.md (시장 리서치)
+- docs/research/competitor-analysis.md (경쟁사 분석)
+- docs/decisions/001-auth-provider.md (기술 의사결정)
+- docs/specs/login-feature.md (기능 명세)
+
+특징:
+- Git 히스토리로 변경 추적
+- PR 리뷰로 품질 관리
+- 검색/참조 용이
+```
+
+### 3.2 결과물 생성 플로우
+
+```
+[Slack 대화]
+    │
+    ├─── "로그인 페이지 만들어줘" ──────┬──→ [코드 생성] → PR → 프리뷰 URL
+    │                                   │
+    ├─── "경쟁사 분석해줘" ─────────────┴──→ [문서 생성] → PR → Markdown
+    │
+    └─── "이 기능 어떻게 구현할지 정리해줘" ──→ [명세 작성] → PR → Markdown
+```
+
+---
+
+## 4. 3-레이어 아키텍처 상세
+
+### 4.1 전체 구조
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      LAYER 1: 상위개념 (Command Layer)                   │
+│                       Slack에서 전략적 의사결정                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 역할:                                                                    │
+│ • Slack 스레드에서 대화 → PoC 제품 방향 결정                               │
+│ • 시장/기술 리서치 검증 요청                                               │
+│ • 핵심 문제 정의 → 최소 기능 정의                                          │
+│ • A/B 테스트처럼 기능 추가 버전 미리보기 요청                               │
+│                                                                          │
+│ 결과물:                                                                   │
+│ • 브랜치 생성 → PR → 격리된 프리뷰 URL                                     │
+│ • 리서치/의사결정 문서 (Markdown)                                          │
+│                                                                          │
+│ 작업 방식:                                                                │
+│ • 스타트업처럼: 핵심 문제 → 최소 동작 서비스 → 점진적 확장                   │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             │ "화면 보면서 작업하고 싶어"
+                             │ "Canvas 열어줘"
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      LAYER 2: 중위개념 (Canvas Layer)                    │
+│                   실시간 프리뷰 보면서 대화로 수정                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 역할:                                                                    │
+│ • 상위레벨 세션을 열어서 진입 (같은 컨텍스트 유지)                          │
+│ • 격리 환경에서 git clone → npm run dev / docker                         │
+│ • 실시간 프리뷰 보면서 대화로 수정                                         │
+│ • 혼자 작업 또는 팀원과 공동 작업                                          │
+│                                                                          │
+│ 결과물:                                                                   │
+│ • 실시간 프리뷰 URL                                                       │
+│ • 코드 변경사항 → 자동 커밋                                               │
+│                                                                          │
+│ 작업 방식:                                                                │
+│ • 시각적 피드백 기반 빠른 이터레이션                                       │
+│ • "이 버튼 왼쪽으로" → 즉시 반영 → 확인                                    │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             │ "코드 직접 볼게"
+                             │ "내 IDE에서 작업할게"
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      LAYER 3: 하위개념 (Code Layer)                      │
+│                      로컬 IDE에서 직접 코드 작업                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 역할:                                                                    │
+│ • 해당 제품의 Git repo를 로컬에 clone                                     │
+│ • Cursor IDE / VSCode 등 본인 환경에서 직접 코드 수정                      │
+│ • 디버깅, 테스트, 복잡한 리팩토링                                          │
+│                                                                          │
+│ 결과물:                                                                   │
+│ • 로컬 커밋 → Push → PR                                                  │
+│                                                                          │
+│ 작업 방식:                                                                │
+│ • 개발자 본인이 익숙한 도구 사용                                           │
+│ • AI 어시스턴트 (Cursor, Copilot 등) 활용 가능                            │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 레이어 간 전환 상세
+
+| 전환 | 트리거 | 시스템 동작 |
+|-----|-------|-----------|
+| **L1 → L2** | "Canvas 열어줘" | Slack에서 Canvas URL 제공, 같은 세션 ID 유지 |
+| **L1 → L3** | "repo clone 할게" | Git repo URL + 현재 브랜치 정보 제공 |
+| **L2 → L1** | "팀에 공유" | Canvas에서 Slack 채널로 스냅샷/URL 전송 |
+| **L2 → L3** | "이 파일 IDE로" | 해당 파일 경로 + 라인 번호 제공 |
+| **L3 → L1** | "PR 만들었어" | PR URL이 Slack 스레드에 자동 공유 |
+| **L3 → L2** | "프리뷰 봐줘" | 푸시된 브랜치의 프리뷰 URL 공유 |
+
+### 4.3 레이어별 사용 시나리오
+
+#### 시나리오: 새 제품 PoC 개발
+
+```
+[LAYER 1: Slack #product-idea 채널]
+
+PM: "음식 배달 앱 MVP 만들어보자. 핵심은 주문-결제-배달추적이야"
+
+Claude: "네, 스타트업 방식으로 접근하겠습니다.
+
+         📋 핵심 문제: 사용자가 음식을 주문하고 배달 상태를 확인
+
+         🎯 MVP 스코프 (최소 동작 버전):
+         1. 메뉴 목록 보기
+         2. 장바구니에 담기
+         3. 주문하기 (결제는 목업)
+         4. 주문 상태 확인
+
+         먼저 리서치부터 할까요, 바로 만들어볼까요?"
+
+PM: "경쟁사 분석 먼저 해줘"
+
+Claude: "경쟁사 분석을 진행하겠습니다...
+
+         📄 문서 생성됨: docs/research/competitor-analysis.md
+         PR: #12 - Add competitor analysis
+
+         주요 발견:
+         - 배민: 슈퍼앱 전략, 배달+퀵커머스
+         - 쿠팡이츠: 로켓배달 연계, 단건배달
+         - 요기요: 프랜차이즈 중심
+
+         우리의 차별점을 뭘로 잡을까요?"
+
+PM: "일단 MVP 먼저 만들어봐. 메뉴 목록이랑 장바구니만"
+
+Claude: "MVP v0.1 작업 시작합니다.
+
+         🔀 Branch: feature/mvp-v0.1
+
+         작업 완료!
+         📺 프리뷰: https://mvp-v0-1.food-delivery.preview.dev
+         PR: #13 - MVP v0.1: Menu list and cart
+
+         확인해보시고 피드백 주세요!"
+
+PM: "오 좋은데, 메뉴 카드 디자인 좀 다듬고 싶어. Canvas 열어줘"
+
+Claude: "Canvas를 열었습니다.
+         🎨 https://canvas.example.com/session/abc123
+
+         같은 세션에서 계속 작업할 수 있습니다.
+         실시간 프리뷰 보면서 수정해보세요!"
+
+---
+[LAYER 2: Canvas UI]
+
+PM: (Canvas에서 프리뷰 보면서)
+    "메뉴 카드 그림자 좀 더 진하게"
+
+Claude: "수정했습니다. 프리뷰 확인해주세요."
+        [프리뷰 자동 새로고침]
+
+PM: "좋아. 이제 가격 폰트 더 크게"
+
+Claude: "적용했습니다."
+
+PM: "완벽해. 이거 Slack에 공유해줘"
+
+Claude: "Slack #product-idea에 공유했습니다.
+         다른 팀원들 피드백 기다려볼까요?"
+
+---
+[LAYER 3: 로컬 IDE - 개발자가 직접]
+
+개발자: (Slack에서 repo URL 확인)
+        $ git clone github.com/org/food-delivery
+        $ git checkout feature/mvp-v0.1
+        $ cursor .
+
+        (Cursor IDE에서 결제 로직 직접 구현)
+
+        $ git push origin feature/mvp-v0.1
+
+[Slack에 자동 알림]
+Bot: "🔔 feature/mvp-v0.1 브랜치에 새 커밋
+      프리뷰 업데이트됨: https://mvp-v0-1.food-delivery.preview.dev"
+```
+
+---
+
+## 5. 격리 배포 환경 및 PR 플로우
+
+### 5.1 브랜치 기반 격리 배포
+
+> **같은 repo 기반으로 격리된 배포 환경**
+
+```
+main (프로덕션)
+  │
+  ├── feature/login ──────→ https://feature-login.app.preview.dev
+  │
+  ├── feature/payment ────→ https://feature-payment.app.preview.dev
+  │
+  └── experiment/new-ui ──→ https://experiment-new-ui.app.preview.dev
+
+각 브랜치 = 독립된 프리뷰 URL
+```
+
+### 5.2 A/B 테스트 스타일 기능 비교
+
+```
+[Slack에서]
+
+PM: "로그인 UI를 두 가지 버전으로 만들어서 비교해보고 싶어"
+
+Claude: "두 가지 버전을 만들겠습니다.
+
+         Version A (기존 스타일):
+         🔀 Branch: experiment/login-v-a
+         📺 Preview: https://login-v-a.app.preview.dev
+
+         Version B (새로운 스타일):
+         🔀 Branch: experiment/login-v-b
+         📺 Preview: https://login-v-b.app.preview.dev
+
+         두 URL 비교해보시고 어떤 게 나은지 알려주세요!"
+
+PM: "B가 낫네. B로 가자"
+
+Claude: "Version B를 main에 머지하는 PR 생성했습니다.
+         PR: #45 - Merge login UI version B
+
+         리뷰 후 머지해주세요!"
+```
+
+### 5.3 프리뷰 배포 자동화 플로우
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        PR/브랜치 프리뷰 플로우                      │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  1. Slack에서 작업 요청                                            │
+│     │                                                             │
+│     ▼                                                             │
+│  2. Claude가 브랜치 생성                                           │
+│     $ git checkout -b feature/new-feature                        │
+│     │                                                             │
+│     ▼                                                             │
+│  3. 코드 작성 & 커밋                                               │
+│     $ git commit -m "Add new feature"                            │
+│     │                                                             │
+│     ▼                                                             │
+│  4. Push → PR 생성                                                │
+│     $ git push origin feature/new-feature                        │
+│     $ gh pr create --title "New feature"                         │
+│     │                                                             │
+│     ▼                                                             │
+│  5. CI/CD 트리거 (GitHub Actions / Vercel / coolify)              │
+│     - 브랜치 감지                                                  │
+│     - Docker build 또는 npm run build                            │
+│     - 격리 환경에 배포                                             │
+│     │                                                             │
+│     ▼                                                             │
+│  6. 프리뷰 URL 생성                                                │
+│     https://{branch-name}.{app}.preview.dev                      │
+│     │                                                             │
+│     ▼                                                             │
+│  7. Slack에 프리뷰 URL 자동 공유                                    │
+│     "🚀 프리뷰 준비됨: https://feature-new-feature.app.preview.dev" │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 5.4 격리 환경 기술 옵션
+
+| 옵션 | 장점 | 단점 | 적합한 경우 |
+|-----|------|------|-----------|
+| **Vercel Preview** | 설정 간단, 자동화됨 | 비용, 커스터마이징 제한 | 빠른 시작, Next.js 프로젝트 |
+| **coolify + Traefik** | 완전한 제어, 비용 절감 | 초기 설정 복잡 | 장기적, 다양한 스택 |
+| **Netlify Preview** | Vercel과 유사 | 비용 | 정적 사이트 중심 |
+| **Railway** | 간단한 배포 | 비용 | 백엔드 포함 앱 |
+
+---
+
+## 6. 레이어별 솔루션 분석
+
+### 6.1 LAYER 1: 상위개념 (Slack Integration)
 
 #### 상용 솔루션
 
 | 솔루션 | 특징 | 장점 | 단점 |
 |-------|------|------|------|
-| **[Claude and Slack](https://claude.com/claude-and-slack)** | Anthropic 공식 | 안정적, 기업용, Claude 최적화 | 커스터마이징 제한, 월 구독료 |
+| **[Claude and Slack](https://claude.com/claude-and-slack)** | Anthropic 공식 | 안정적, 기업용 | 커스터마이징 제한, 월 구독료 |
 
 #### 오픈소스 재료
 
@@ -127,38 +424,19 @@ Claude: "수정했습니다. 프리뷰 새로고침 해주세요."
 | **[HumanLayer](https://github.com/humanlayer/humanlayer)** | Slack HITL SDK | ⭐⭐⭐⭐ |
 | **[@slack/bolt](https://github.com/slackapi/bolt-js)** | Slack 봇 프레임워크 | ⭐⭐⭐⭐ |
 
-#### claudecodeui 핵심 분석
+#### 필요 기능 체크리스트
 
-> 참고: [POC_SYSTEM_ANALYSIS_REPORT.md](./POC_SYSTEM_ANALYSIS_REPORT.md) 섹션 2.2
-
-**이미 갖춰진 것:**
-- ✅ Claude SDK 프록시 (`/server/claude-sdk.js`)
-- ✅ API 키 인증 (`/api/agent/query` + `x-api-key`)
-- ✅ 세션 관리 (sessionId로 대화 컨텍스트 유지)
-- ✅ 스트리밍 응답 지원
-
-**Slack 연동에 필요한 것:**
-- 🔧 Thread → Session 매핑 (Redis)
-- 🔧 Channel → Project 매핑
-- 🔧 Slack Bot 이벤트 핸들러
-
-#### 추천 방향
-
-```
-Option A: claudecodeui + Slack Bolt 직접 연동 (선호)
-- 완전한 커스터마이징 가능
-- 비용 절감
-- 작업량: 2-3주
-
-Option B: Claude and Slack + claudecodeui 병행
-- 빠른 시작 가능
-- 월 구독 비용 발생
-- 커스터마이징 제한
-```
+- [x] Claude SDK 프록시 (claudecodeui)
+- [x] 세션 관리 (claudecodeui)
+- [ ] Slack Thread ↔ Session 매핑
+- [ ] Slack Channel ↔ Git Repo 매핑
+- [ ] 브랜치 자동 생성 및 PR 생성
+- [ ] 프리뷰 URL 자동 공유
+- [ ] 문서 생성 및 커밋
 
 ---
 
-### 3.2 LAYER 2: 중위개념 (Canvas UI)
+### 6.2 LAYER 2: 중위개념 (Canvas UI)
 
 #### 상용 솔루션
 
@@ -174,32 +452,18 @@ Option B: Claude and Slack + claudecodeui 병행
 |---------|------|--------|
 | **[Claudable](https://github.com/opactorai/Claudable)** | Next.js 기반 AI 앱 빌더 | ⭐⭐⭐⭐⭐ |
 
-#### Claudable 핵심 분석
+#### 필요 기능 체크리스트
 
-> 참고: [POC_SYSTEM_ANALYSIS_REPORT.md](./POC_SYSTEM_ANALYSIS_REPORT.md) 섹션 2.1
-
-**이미 갖춰진 것:**
-- ✅ 실시간 프리뷰 시스템 (`PreviewManager`)
-- ✅ WebSocket 기반 변경 사항 브로드캐스트
-- ✅ Vercel 자동 배포
-- ✅ GitHub 통합
-
-**해결해야 할 이슈:**
-- ⚠️ SSH 포트포워딩 환경에서 프리뷰 동작 안 함 (localhost 하드코딩)
-- 🔧 환경 인식 URL 생성 로직 필요
-
-#### 추천 방향
-
-```
-Claudable UI + claudecodeui 백엔드 통합
-- Claudable의 완성된 프리뷰 UI 활용
-- claudecodeui의 안정적인 Claude SDK 통합 활용
-- 작업량: 1-2주 (API 어댑터 작성)
-```
+- [x] 실시간 프리뷰 (Claudable)
+- [x] WebSocket 기반 변경 사항 브로드캐스트 (Claudable)
+- [ ] Slack 세션과 연동 (같은 컨텍스트 유지)
+- [ ] 격리 환경에서 git clone → dev 서버 실행
+- [ ] 공동 작업 (여러 사용자 동시 접속)
+- [ ] SSH 포트포워딩 환경 지원
 
 ---
 
-### 3.3 LAYER 3: 로우레벨 (IDE/CLI)
+### 6.3 LAYER 3: 하위개념 (IDE/CLI)
 
 #### 상용 솔루션
 
@@ -214,339 +478,281 @@ Claudable UI + claudecodeui 백엔드 통합
 |---------|------|--------|
 | **VSCode + Copilot** | 가장 보편적 | ⭐⭐⭐⭐ |
 | **[Gemini CLI](https://github.com/google/gemini-cli)** | Google Gemini 기반 | ⭐⭐⭐ |
-| **Antigravity** | (정보 필요) | ? |
 
-#### 추천 방향
+#### Layer 3 접근 방식
+
+> **사용자 선택에 맡김 - 연결만 표준화**
 
 ```
-Layer 3는 사용자 선택에 맡김
-- 각 개발자가 익숙한 도구 사용
-- Layer 1, 2와의 연결만 표준화 (Git 기반)
-- 예: Cursor 사용자도, VSCode 사용자도 같은 Slack 채널에서 협업
+시스템이 제공하는 것:
+- Git repo URL
+- 현재 작업 브랜치
+- 프리뷰 URL
+
+사용자가 선택하는 것:
+- IDE (Cursor, VSCode, WebStorm 등)
+- AI 어시스턴트 (Copilot, Claude 등)
 ```
 
 ---
 
-## 4. MVP 전략: 바로 돌아가는 제품부터
+## 7. MVP 전략: 바로 돌아가는 제품부터
 
-### 4.1 핵심 원칙
+### 7.1 핵심 원칙
 
 > **"바로 돌아갈 수 있는 형태 → 점진적 기능 추가"**
+>
+> 스타트업 방식: 핵심 문제 해결 → 최소 동작 서비스 → 피드백 → 개선
 
-1. **가장 작은 E2E 플로우** 먼저 완성
-2. 각 단계에서 **실제 사용 가능한 상태** 유지
-3. 피드백 → 개선 → 피드백 반복
+### 7.2 MVP 단계 정의
 
-### 4.2 MVP 단계 정의
-
-#### MVP 0: 즉시 시작 가능 (Day 1)
+#### MVP 0: 환경 구축 (Day 1-2)
 
 ```
-claudecodeui 그대로 실행
-- Web UI로 Claude와 대화
-- 프로젝트/세션 관리
-- 기본 기능 동작 확인
+claudecodeui + Git 연동 기본 확인
 ```
 
 **체크리스트:**
 - [ ] claudecodeui 설치 및 실행
 - [ ] 로컬에서 대화 테스트
-- [ ] 파일 수정 동작 확인
+- [ ] Git repo 생성 및 연결 테스트
 
 ---
 
-#### MVP 1: Slack 기본 연동 (Week 1-2)
+#### MVP 1: Slack 기본 연동 (Week 1)
 
 ```
-Slack에서 Claude와 기본 대화
-- @claude 멘션으로 질문
-- 답변 받기
-- Thread로 대화 이어가기
+Slack에서 Claude와 기본 대화 + Git repo 연결
 ```
-
-**아키텍처:**
-```
-Slack → Slack Bolt → claudecodeui API → Claude SDK
-                          ↓
-                     응답 → Slack
-```
-
-**체크리스트:**
-- [ ] Slack App 생성 (Bot Token, Signing Secret)
-- [ ] Slack Bolt 기본 설정
-- [ ] claudecodeui `/api/agent/query` 연동
-- [ ] Thread-Session 매핑 (메모리 또는 Redis)
 
 **성공 기준:**
 ```
-[Slack 채널에서]
-사용자: @claude 안녕
-Claude: 안녕하세요! 무엇을 도와드릴까요?
+[Slack #my-project 채널]
+사용자: /claude init github.com/org/my-project
+Claude: ✅ 채널이 github.com/org/my-project에 연결되었습니다.
+
+사용자: @claude README.md 내용 보여줘
+Claude: [README.md 내용 표시]
 ```
 
 ---
 
-#### MVP 2: 프로젝트 연결 (Week 2-3)
+#### MVP 2: 코드 수정 + 브랜치 + 프리뷰 (Week 2-3)
 
 ```
-Slack 채널 ↔ 프로젝트 연결
-- #frontend 채널 → /repos/frontend 프로젝트
-- 해당 프로젝트 컨텍스트에서 작업
+Slack에서 코드 수정 요청 → 브랜치 생성 → 프리뷰 URL
 ```
-
-**추가 기능:**
-- Channel → Project 매핑 저장
-- `/claude config` 슬래시 명령어
-- 프로젝트 파일 읽기/수정
-
-**체크리스트:**
-- [ ] Redis 설정 (채널-프로젝트 매핑 저장)
-- [ ] `/claude config project /path/to/project` 명령어
-- [ ] 프로젝트 컨텍스트 기반 응답
 
 **성공 기준:**
 ```
-[#frontend 채널에서]
-사용자: /claude config project /repos/frontend
-Claude: ✅ #frontend 채널이 /repos/frontend 프로젝트에 연결되었습니다.
+[Slack #my-project 채널]
+사용자: @claude 로그인 페이지 만들어줘
 
-사용자: @claude App.tsx 파일 보여줘
-Claude: [App.tsx 내용 표시]
+Claude: 작업을 시작합니다.
+        🔀 Branch: feature/login-page
+
+        ...작업 중...
+
+        완료했습니다!
+        📺 프리뷰: https://feature-login-page.my-project.preview.dev
+        PR: github.com/org/my-project/pull/5
 ```
 
 ---
 
-#### MVP 3: 코드 수정 + 프리뷰 (Week 3-4)
+#### MVP 3: Canvas 연결 (Week 3-4)
 
 ```
-Slack에서 코드 수정 → 프리뷰 URL 공유
+Slack 세션을 Canvas에서 열어서 시각적으로 작업
 ```
-
-**추가 기능:**
-- 코드 수정 시 자동 dev 서버 시작
-- 프리뷰 URL 생성 및 공유
-- Claudable 프리뷰 매니저 통합
-
-**체크리스트:**
-- [ ] claudecodeui tool 실행 시 프리뷰 트리거
-- [ ] Claudable PreviewManager 포팅 또는 API 연동
-- [ ] 프리뷰 URL Slack으로 전송
 
 **성공 기준:**
 ```
-[#frontend 채널에서]
-사용자: @claude 로그인 버튼을 파란색으로 바꿔줘
-Claude: 수정했습니다!
-        📺 프리뷰: https://preview-abc123.example.com
-        변경 파일: src/components/LoginButton.tsx
+[Slack]
+사용자: @claude Canvas 열어줘
+
+Claude: 🎨 Canvas 열었습니다: https://canvas.example.com/session/xyz
+        현재 브랜치 feature/login-page의 프리뷰를 보면서 작업할 수 있습니다.
+
+[Canvas에서]
+사용자: 버튼 색상 빨간색으로
+Claude: 수정했습니다. [프리뷰 자동 새로고침]
 ```
 
 ---
 
-#### MVP 4: Canvas UI 연결 (Week 4-5)
+#### MVP 4: 문서화 + 리서치 (Week 4-5)
 
 ```
-Slack ↔ Canvas UI 양방향 연결
-- Slack에서 "화면으로 보고 싶어" → Canvas UI 링크
-- Canvas UI에서 수정 → Slack으로 알림
+대화 기반 리서치 → Markdown 문서 생성 → PR
 ```
 
-**추가 기능:**
-- Claudable UI 배포
-- Slack에서 Canvas 세션 링크 공유
-- Canvas 변경 사항 Slack 알림
+**성공 기준:**
+```
+[Slack]
+사용자: @claude 우리 경쟁사 분석해서 문서로 정리해줘
 
-**체크리스트:**
-- [ ] Claudable 프론트엔드 배포
-- [ ] `/claude canvas` 명령어로 세션 URL 생성
-- [ ] Canvas → Slack 웹훅 알림
+Claude: 경쟁사 분석을 진행하겠습니다...
+
+        📄 문서 생성: docs/research/competitor-analysis.md
+        PR: github.com/org/my-project/pull/8
+
+        주요 발견:
+        - 경쟁사 A: ...
+        - 경쟁사 B: ...
+```
 
 ---
 
-#### MVP 5: Git/배포 통합 (Week 5-6)
+#### MVP 5: 공동 작업 (Week 5-6)
 
 ```
-완성된 작업 → PR 생성 → 배포
+여러 사람이 같은 Canvas 세션에서 동시 작업
 ```
 
-**추가 기능:**
-- PR 자동 생성
-- 배포 트리거
-- 상태 알림
-
-**체크리스트:**
-- [ ] Git commit/push 자동화
-- [ ] GitHub PR 생성 연동
-- [ ] Vercel/자체 호스팅 배포 연결
+**성공 기준:**
+```
+[Canvas - 공동 작업 모드]
+PM과 디자이너가 동시 접속
+- PM: "이 버튼 텍스트 바꿔줘"
+- 디자이너: "색상은 이 팔레트로"
+- 변경사항 실시간 동기화
+```
 
 ---
 
-## 5. 의사결정 포인트
+## 8. 의사결정 포인트
 
-### 5.1 결정해야 할 사항들
+### 8.1 결정해야 할 사항들
 
 | # | 결정 사항 | 옵션 | 현재 기울기 | 결정 기준 |
 |---|----------|------|------------|----------|
-| D1 | Slack 연동 방식 | A: claudecodeui 직접<br>B: Claude for Slack 병행 | A | 커스터마이징 필요성, 비용 |
-| D2 | 세션 저장소 | A: Redis<br>B: SQLite<br>C: 메모리 | A | 확장성, 협업 세션 필요성 |
-| D3 | 프리뷰 인프라 | A: Vercel<br>B: 자체 호스팅 (Traefik)<br>C: 둘 다 | C | 비용, 제어 필요성 |
-| D4 | Canvas UI | A: Claudable 그대로<br>B: 커스텀 개발 | A | 개발 시간, 완성도 |
-| D5 | 멀티테넌시 | A: 단일 팀<br>B: 다중 팀 | A (MVP) | 초기 사용자 규모 |
+| D1 | Slack 연동 방식 | A: claudecodeui 직접<br>B: Claude for Slack | A | 커스터마이징 필요 |
+| D2 | 프리뷰 인프라 | A: Vercel<br>B: coolify/자체<br>C: 둘 다 | C | 유연성 + 비용 |
+| D3 | 세션 저장소 | A: Redis<br>B: SQLite | A | 공동 작업 지원 |
+| D4 | 문서 구조 | A: docs/ 폴더<br>B: Wiki<br>C: Notion 연동 | A | Git 중심 원칙 |
 
-### 5.2 결정 기준 체크리스트
-
-**D1: Slack 연동 방식**
-```
-[ ] Q1: 팀 규모가 5명 이상인가?
-       → Yes: B (기업용 안정성)
-       → No: A (유연성)
-
-[ ] Q2: 월 $20+ 구독료 감당 가능한가?
-       → Yes: B 고려
-       → No: A
-
-[ ] Q3: Slack 봇 개발 경험이 있는가?
-       → Yes: A (직접 개발 부담 적음)
-       → No: B (빠른 시작)
-```
-
-**D2: 세션 저장소**
-```
-[ ] Q1: 여러 사용자가 같은 세션 공유하나?
-       → Yes: Redis (분산 처리)
-       → No: SQLite 충분
-
-[ ] Q2: 서버 재시작 시에도 세션 유지 필요한가?
-       → Yes: Redis/SQLite
-       → No: 메모리 가능
-
-[ ] Q3: 수평 확장 계획이 있는가?
-       → Yes: Redis
-       → No: SQLite
-```
-
-### 5.3 검증 필요 사항
+### 8.2 검증 필요 사항
 
 | # | 가설 | 검증 방법 | 상태 |
 |---|-----|---------|------|
-| H1 | claudecodeui API가 Slack 연동에 충분하다 | MVP 1에서 확인 | ⏳ 대기 |
-| H2 | SSH 포트포워딩 이슈가 수정 가능하다 | Claudable 코드 분석 | ✅ 분석됨 |
-| H3 | Thread-Session 매핑이 자연스럽게 작동한다 | MVP 1-2에서 확인 | ⏳ 대기 |
-| H4 | Slack에서의 UX가 웹 UI만큼 좋다 | MVP 2 이후 사용자 테스트 | ⏳ 대기 |
+| H1 | 브랜치별 격리 배포가 자동화 가능하다 | coolify 또는 Vercel 테스트 | ⏳ |
+| H2 | Slack Thread-Session 매핑이 자연스럽다 | MVP 1에서 확인 | ⏳ |
+| H3 | Canvas 공동 작업이 실용적이다 | MVP 5에서 확인 | ⏳ |
+| H4 | 리서치 문서 자동 생성 품질이 충분하다 | MVP 4에서 확인 | ⏳ |
 
 ---
 
-## 6. 구현 로드맵
+## 9. 구현 로드맵
 
 ### Phase 1: Foundation (Week 1-2)
 
 ```
 ┌─────────────────────────────────────────┐
-│ MVP 0: claudecodeui 환경 구축            │
-│ MVP 1: Slack 기본 연동                   │
+│ MVP 0: 환경 구축                         │
+│ MVP 1: Slack + Git 연결                  │
 ├─────────────────────────────────────────┤
 │ 산출물:                                  │
-│ - Slack에서 Claude와 기본 대화 가능       │
-│ - 프로젝트 폴더 내 파일 조회/수정 가능     │
+│ - Slack에서 repo 연결 및 기본 대화        │
+│ - 파일 조회/수정 가능                     │
 └─────────────────────────────────────────┘
 ```
 
-### Phase 2: Integration (Week 3-4)
+### Phase 2: Preview (Week 3-4)
 
 ```
 ┌─────────────────────────────────────────┐
-│ MVP 2: 프로젝트 연결                     │
-│ MVP 3: 코드 수정 + 프리뷰                │
+│ MVP 2: 브랜치 + 프리뷰                   │
+│ MVP 3: Canvas 연결                       │
 ├─────────────────────────────────────────┤
 │ 산출물:                                  │
-│ - 채널-프로젝트 매핑                      │
-│ - 코드 수정 시 프리뷰 URL 자동 공유       │
+│ - 브랜치별 격리 프리뷰 URL               │
+│ - Canvas에서 시각적 작업                 │
 └─────────────────────────────────────────┘
 ```
 
-### Phase 3: Canvas (Week 5-6)
+### Phase 3: Documentation & Collaboration (Week 5-6)
 
 ```
 ┌─────────────────────────────────────────┐
-│ MVP 4: Canvas UI 연결                    │
-│ MVP 5: Git/배포 통합                     │
+│ MVP 4: 리서치 + 문서화                   │
+│ MVP 5: 공동 작업                         │
 ├─────────────────────────────────────────┤
 │ 산출물:                                  │
-│ - Slack ↔ Canvas 양방향 연결             │
-│ - PR 생성 및 배포 자동화                  │
+│ - 자동 문서 생성 및 PR                   │
+│ - 다중 사용자 동시 작업                   │
 └─────────────────────────────────────────┘
 ```
 
-### 마일스톤 체크포인트
+### 마일스톤
 
 | Week | 마일스톤 | 성공 기준 |
 |------|---------|---------|
-| W2 | 🎯 Slack 대화 가능 | @claude 멘션으로 응답 받기 |
-| W4 | 🎯 코드 수정 + 프리뷰 | Slack에서 코드 수정 → 프리뷰 URL 확인 |
-| W6 | 🎯 E2E 완성 | 요청 → 개발 → PR → 배포 전체 흐름 |
+| W2 | 🎯 Slack-Git 연결 | 채널에서 repo 파일 조회/수정 |
+| W4 | 🎯 프리뷰 자동화 | 브랜치 푸시 → 프리뷰 URL 자동 |
+| W6 | 🎯 E2E 완성 | 대화 → 개발 → 문서화 → 배포 전체 |
 
 ---
 
-## 7. 리스크 및 미결 사항
+## 10. 리스크 및 미결 사항
 
-### 7.1 기술적 리스크
+### 10.1 기술적 리스크
 
 | 리스크 | 영향 | 대응 방안 |
 |-------|------|----------|
-| SSH 포트포워딩 프리뷰 이슈 | 높음 | URL Resolver 구현 (분석 완료) |
+| 브랜치별 프리뷰 비용 | 중간 | 자동 정리 정책, coolify 활용 |
 | Slack API Rate Limit | 중간 | 응답 청킹, 큐잉 |
-| 세션 동시성 충돌 | 중간 | Redis 잠금 메커니즘 |
-| Claude API 비용 | 낮음 | 사용량 모니터링, 캐싱 |
+| 공동 작업 동시성 | 높음 | Redis 잠금, 충돌 해결 UX |
+| Claude API 비용 | 낮음 | 사용량 모니터링 |
 
-### 7.2 미결 사항 (TBD)
+### 10.2 미결 사항
 
-- [ ] Antigravity 프로젝트 정보 추가 조사 필요
-- [ ] Gemini CLI 실제 사용성 평가 필요
-- [ ] 멀티테넌시 아키텍처 상세 설계 (Phase 2 이후)
-- [ ] 보안 감사 범위 정의
+- [ ] 프리뷰 환경 자동 정리 정책 (며칠 후 삭제?)
+- [ ] 보안: 프리뷰 URL 접근 제어
+- [ ] 대용량 repo 처리 전략
+- [ ] 모바일에서의 Canvas 사용성
 
-### 7.3 열린 질문들
+### 10.3 열린 질문
 
 ```
-Q1: MVP 1 완료 후 사용자 피드백 수집 방법은?
-Q2: 프리뷰 URL 유효 기간은 어떻게 설정할 것인가?
-Q3: 팀 외부 사용자 접근 제어는 어떻게 할 것인가?
-Q4: 에러 발생 시 Slack 알림 형식은?
+Q1: 프리뷰 URL 유효 기간?
+Q2: 비개발자도 Canvas에서 편하게 작업 가능한가?
+Q3: 기존 팀의 Git 워크플로우와 충돌하지 않는가?
+Q4: 리서치 문서의 품질을 어떻게 보장하는가?
 ```
 
 ---
 
-## 8. 다음 단계
+## 11. 다음 단계
 
 ### 즉시 실행 (이번 주)
 
-1. [ ] claudecodeui 로컬 설치 및 실행 테스트
+1. [ ] claudecodeui 로컬 설치 및 테스트
 2. [ ] Slack App 생성 (테스트 워크스페이스)
-3. [ ] 의사결정 D1 (Slack 연동 방식) 최종 확정
+3. [ ] 테스트용 GitHub repo 생성
+4. [ ] Vercel 또는 coolify 프리뷰 환경 테스트
 
-### 피드백 필요 사항
+### 피드백 요청
 
-이 보고서를 검토하고 다음 항목에 대한 피드백 부탁드립니다:
-
-1. **3-레이어 구분**이 적절한가?
-2. **MVP 단계 정의**가 현실적인가?
-3. **의사결정 포인트**에서 빠진 것은?
-4. **우선순위** 조정이 필요한가?
+1. **Git Repo 중심 아키텍처**가 맞는 방향인가?
+2. **3-레이어 구분**과 전환 플로우가 자연스러운가?
+3. **격리 배포 환경** 구현 방식 선호도는?
+4. **MVP 단계**가 현실적인가?
 
 ---
 
 ## 참고 자료
 
 ### 내부 문서
-- [POC 시스템 분석 보고서](./POC_SYSTEM_ANALYSIS_REPORT.md) - Claudable, claudecodeui, coolify 상세 분석
-- [기존 HITL 솔루션 리서치](../automation/EXISTING_SOLUTIONS_HITL.md) - Human-in-the-loop 솔루션 비교
+- [POC 시스템 분석 보고서](./POC_SYSTEM_ANALYSIS_REPORT.md)
+- [기존 HITL 솔루션 리서치](../automation/EXISTING_SOLUTIONS_HITL.md)
 
 ### 외부 링크
 - [claudecodeui GitHub](https://github.com/siteboon/claudecodeui)
 - [Claudable GitHub](https://github.com/opactorai/Claudable)
-- [Claude and Slack](https://claude.com/claude-and-slack)
+- [coolify GitHub](https://github.com/coollabsio/coolify)
 - [Slack Bolt SDK](https://github.com/slackapi/bolt-js)
 
 ---
 
-*이 문서는 작성 중이며, 피드백을 받으면서 계속 업데이트됩니다.*
+*v0.2 - 대전제(Git Repo 중심), 결과물 형태, 격리 배포 환경 내용 추가*
