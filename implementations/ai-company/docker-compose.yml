@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # ======================
+  # Claude Code Proxy
+  # ======================
+  claude-proxy:
+    build:
+      context: ./packages/claude-proxy
+      dockerfile: Dockerfile
+    environment:
+      - PORT=3001
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - claude-data:/data
+      - ${HOME}/.claude:/root/.claude:ro  # Claude CLI credentials
+    depends_on:
+      - redis
+    networks:
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.claude-proxy.rule=Host(`claude.${DOMAIN}`)
+      - traefik.http.routers.claude-proxy.tls.certresolver=letsencrypt
+      - traefik.http.services.claude-proxy.loadbalancer.server.port=3001
+
+  # ======================
+  # Slack Bot
+  # ======================
+  slack-bot:
+    build:
+      context: ./packages/slack-bot
+      dockerfile: Dockerfile
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - REDIS_URL=redis://redis:6379
+      - CLAUDE_PROXY_URL=http://claude-proxy:3001
+    depends_on:
+      - claude-proxy
+      - redis
+    networks:
+      - internal
+
+  # ======================
+  # Redis (Session Store)
+  # ======================
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  claude-data:
+  redis-data:
+
+networks:
+  internal:
+  traefik-public:
+    external: true
