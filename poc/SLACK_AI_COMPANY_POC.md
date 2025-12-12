@@ -1,8 +1,8 @@
 # Slack-First AI Company Platform - POC 분석 및 설계 보고서
 
 **작성일**: 2025-12-12
-**버전**: v0.3
-**상태**: Self-host 중심 리서치 완료
+**버전**: v0.4
+**상태**: 구현 방향 확정
 
 ---
 
@@ -487,23 +487,110 @@ networks:
 
 ## 6. 의사결정 기록
 
-### 6.1 결정된 사항
+### 6.1 확정된 사항 ✅
 
 | # | 결정 | 선택 | 근거 |
 |---|------|------|------|
-| **D1** | 배포 플랫폼 | **Dokploy** | Self-host, 가벼움, Traefik 통합, Multi-server |
-| **D2** | Reverse Proxy | **Traefik** | Docker 라벨 자동 설정, Wildcard SSL |
-| **D3** | DNS Provider | **Cloudflare** | 무료, DNS-01 Challenge, 빠름 |
-| **D4** | 세션 저장소 | **Redis** | 공동작업 지원, 분산 가능 |
-| **D5** | Claude 연동 | **claudecodeui** | 검증됨, API 준비됨 |
+| **D1** | 배포 플랫폼 | **Dokploy** | Self-host, 가벼움, Traefik 통합 |
+| **D2** | 서버 구성 | **단일 서버** | 8명 소규모, 단순화 |
+| **D3** | 코드베이스 | **단일 Repo** | 오픈소스 분해 → 핵심만 재조립 |
+| **D4** | Reverse Proxy | **Traefik** | Docker 라벨 자동 설정, Wildcard SSL |
+| **D5** | DNS | **Cloudflare** | 무료, DNS-01 Challenge |
+| **D6** | 세션 저장소 | **Redis** | Thread-Session 매핑 |
+| **D7** | 구현 방식 | **바닥부터 핵심만** | 오픈소스 참고하되 직접 구현 |
 
-### 6.2 보류/논의 필요
+### 6.2 단일 Repo 구조
 
-| # | 항목 | 옵션 | 논의 포인트 |
-|---|------|------|-----------|
-| **P1** | Canvas UI | Claudable 수정 vs 직접 개발 | 수정 범위 확인 필요 |
-| **P2** | 문서 자동생성 | Claude 직접 vs LangChain | 품질/제어 트레이드오프 |
-| **P3** | 프리뷰 정리 정책 | 7일 후 삭제? PR 닫히면? | 리소스 관리 |
+```
+slack-ai-platform/
+├── docker-compose.yml          # 전체 서비스 정의
+├── .env.example                 # 환경변수 템플릿
+│
+├── packages/
+│   ├── slack-bot/              # Layer 1: Slack 연동
+│   │   ├── src/
+│   │   │   ├── index.ts        # Bolt 앱 진입점
+│   │   │   ├── handlers/       # 메시지, 커맨드 핸들러
+│   │   │   └── services/       # Redis, Claude API 클라이언트
+│   │   ├── Dockerfile
+│   │   └── package.json
+│   │
+│   ├── claude-proxy/           # Claude Code CLI 프록시
+│   │   ├── src/
+│   │   │   ├── index.ts        # Express 서버
+│   │   │   ├── claude-sdk.ts   # Claude SDK 래퍼 (claudecodeui 참고)
+│   │   │   ├── session.ts      # 세션 관리
+│   │   │   └── routes/
+│   │   │       └── agent.ts    # /api/agent/* 엔드포인트
+│   │   ├── Dockerfile
+│   │   └── package.json
+│   │
+│   ├── canvas-ui/              # Layer 2: 웹 UI (선택, MVP 3 이후)
+│   │   ├── src/
+│   │   │   ├── app/            # Next.js App Router
+│   │   │   └── components/     # 프리뷰, 채팅 UI
+│   │   ├── Dockerfile
+│   │   └── package.json
+│   │
+│   └── shared/                 # 공통 모듈
+│       ├── types/              # TypeScript 타입
+│       └── utils/              # 유틸리티 함수
+│
+├── scripts/
+│   ├── deploy-preview.sh       # 브랜치 프리뷰 배포 스크립트
+│   └── cleanup-previews.sh     # 오래된 프리뷰 정리
+│
+└── docs/
+    └── setup.md                # 설치 가이드
+```
+
+### 6.3 레이어별 추출 부품
+
+#### FROM claudecodeui (핵심)
+
+```
+추출:
+├── /server/claude-sdk.js       → packages/claude-proxy/src/claude-sdk.ts
+│   • Claude Agent SDK 래핑
+│   • 세션 ID 관리
+│   • 스트리밍 응답 처리
+│
+├── /server/routes/agent.js     → packages/claude-proxy/src/routes/agent.ts
+│   • POST /api/agent/query
+│   • 프로젝트 경로 기반 컨텍스트
+│
+└── /server/projects.js         → packages/claude-proxy/src/session.ts
+    • JSONL 세션 파싱
+    • 프로젝트 디스커버리
+```
+
+#### FROM Claudable (참고)
+
+```
+참고 (필요시):
+├── /lib/services/preview.ts    → packages/canvas-ui/src/services/preview.ts
+│   • Dev 서버 관리
+│   • 포트 할당
+│   ⚠️ localhost 하드코딩 수정 필요
+│
+└── /lib/server/websocket-manager.ts → 실시간 동기화 참고
+```
+
+#### FROM coolify (개념만)
+
+```
+참고 (개념):
+├── PR Preview URL 템플릿       → {{branch}}.app.example.com
+├── Traefik 라벨 생성 패턴      → scripts/deploy-preview.sh
+└── 도메인 자동 생성            → Dokploy가 처리
+```
+
+### 6.4 보류 사항
+
+| # | 항목 | 결정 시점 |
+|---|------|---------|
+| P1 | Canvas UI 상세 설계 | MVP 2 완료 후 |
+| P2 | 프리뷰 정리 정책 | MVP 3 구현 시 |
 
 ---
 
@@ -511,114 +598,152 @@ networks:
 
 ### 7.1 핵심 원칙
 
-> **"핵심 부품만 조립 → 바로 동작 → 점진적 확장"**
+> **"바닥부터 핵심만 → 바로 동작 → 점진적 확장"**
 
 ### 7.2 MVP 단계
 
-#### MVP 0: 인프라 구축 (Day 1-2)
+#### MVP 0: 인프라 + Repo 셋업 (Day 1-2)
 
 ```
-서버 + Docker + Traefik + Dokploy 설치
+서버 + Dokploy + 단일 Repo 초기화
 ```
 
 **체크리스트**:
-- [ ] 서버 준비 (Hetzner/DO, 4GB RAM+)
+- [ ] 서버 준비 (4GB RAM+)
 - [ ] Dokploy 설치
 - [ ] Wildcard DNS 설정 (*.app.example.com)
-- [ ] SSL 인증서 확인
+- [ ] `slack-ai-platform` repo 생성
+- [ ] monorepo 구조 셋업 (pnpm workspace)
 
-**성공 기준**: `https://test.app.example.com` 접속 가능
+**성공 기준**: Dokploy 대시보드 접속 가능
 
 ---
 
-#### MVP 1: claudecodeui 배포 (Day 3-4)
+#### MVP 1: claude-proxy 구현 (Day 3-5)
 
 ```
-claudecodeui Self-host → 웹에서 Claude 대화
+packages/claude-proxy → Claude Code CLI 프록시
+```
+
+**구현**:
+```typescript
+// packages/claude-proxy/src/claude-sdk.ts
+// claudecodeui의 /server/claude-sdk.js 참고하여 TypeScript로 재작성
+
+export async function queryClaudeSDK(options: {
+  projectPath: string;
+  message: string;
+  sessionId?: string;
+}) {
+  // Claude Agent SDK 호출
+  // 세션 관리
+  // 스트리밍 응답
+}
 ```
 
 **체크리스트**:
-- [ ] claudecodeui Docker 이미지 빌드
+- [ ] claude-sdk.ts 핵심 로직 구현
+- [ ] /api/agent/query 엔드포인트
+- [ ] Docker 이미지 빌드
 - [ ] Dokploy에 배포
-- [ ] `https://claude.app.example.com` 접속
-- [ ] 대화 테스트
+
+**성공 기준**: `curl -X POST /api/agent/query` 응답
 
 ---
 
-#### MVP 2: Slack 연동 (Week 1)
+#### MVP 2: slack-bot 구현 (Week 1)
 
 ```
-Slack → claudecodeui API → 응답
+packages/slack-bot → Slack ↔ claude-proxy 연결
+```
+
+**구현**:
+```typescript
+// packages/slack-bot/src/index.ts
+import { App } from '@slack/bolt';
+
+app.message(async ({ message, say }) => {
+  const response = await fetch('http://claude-proxy:3001/api/agent/query', {
+    method: 'POST',
+    body: JSON.stringify({ message: message.text, ... })
+  });
+  await say({ text: response.data, thread_ts: message.ts });
+});
 ```
 
 **체크리스트**:
-- [ ] Slack App 생성
-- [ ] slack-bot 컨테이너 배포
-- [ ] Redis 연결
-- [ ] `@claude` 멘션 응답 확인
+- [ ] Slack App 생성 (Socket Mode)
+- [ ] @claude 멘션 핸들러
+- [ ] Thread → Session 매핑 (Redis)
+- [ ] Channel → Project 매핑
 
 **성공 기준**:
 ```
-[Slack #test 채널]
+[Slack]
 사용자: @claude 안녕
 Claude: 안녕하세요!
 ```
 
 ---
 
-#### MVP 3: Git + 프리뷰 연동 (Week 2)
+#### MVP 3: Git + 프리뷰 (Week 2)
 
 ```
-Slack 요청 → 브랜치 생성 → 프리뷰 URL
+코드 생성 → Git push → 프리뷰 URL
 ```
 
 **체크리스트**:
-- [ ] Channel → Repo 매핑
-- [ ] 브랜치 자동 생성
-- [ ] Dokploy Webhook 연동
+- [ ] /claude init {repo-url} 커맨드
+- [ ] 브랜치 자동 생성/푸시
+- [ ] Dokploy Preview Deployment 연동
 - [ ] 프리뷰 URL Slack 공유
 
 **성공 기준**:
 ```
 [Slack]
 사용자: @claude 로그인 페이지 만들어줘
-Claude: 📺 프리뷰: https://feature-login.app.example.com
+Claude: 📺 https://feature-login.app.example.com
 ```
 
 ---
 
-#### MVP 4: Canvas 연결 (Week 3)
+#### MVP 4: Canvas UI (Week 3+)
 
 ```
-Slack 세션 → Canvas UI → 실시간 프리뷰
+packages/canvas-ui → 웹에서 시각적 작업
 ```
+
+**보류** - MVP 3 완료 후 결정
 
 ---
 
 ### 7.3 마일스톤
 
-| Week | 마일스톤 | 검증 방법 |
-|------|---------|---------|
-| W1 | 🎯 Slack 대화 | @claude 응답 |
-| W2 | 🎯 프리뷰 URL | 브랜치 → URL 자동 |
-| W3 | 🎯 Canvas | 시각적 작업 가능 |
+| Day/Week | 마일스톤 | 검증 |
+|----------|---------|------|
+| D2 | 🎯 인프라 완료 | Dokploy 접속 |
+| D5 | 🎯 claude-proxy | API 응답 |
+| W1 | 🎯 Slack 연동 | @claude 응답 |
+| W2 | 🎯 프리뷰 URL | 브랜치 → URL |
 
 ---
 
 ## 8. 다음 단계
 
-### 즉시 실행
+### 즉시 실행 (MVP 0)
 
-1. [ ] 서버 준비 (Hetzner 4GB 권장)
-2. [ ] Dokploy 설치 테스트
-3. [ ] Cloudflare DNS 설정
-4. [ ] claudecodeui 로컬 테스트
+1. [ ] 서버 준비 (Hetzner 4GB)
+2. [ ] Dokploy 설치
+3. [ ] Cloudflare DNS 설정 (*.app.example.com)
+4. [ ] `slack-ai-platform` repo 생성
+5. [ ] monorepo 초기화 (pnpm workspace)
 
-### 피드백 요청
+### 그 다음 (MVP 1)
 
-1. **Dokploy vs Coolify** - 더 가벼운 Dokploy로 시작?
-2. **Canvas UI** - Claudable 수정 vs 최소 직접 구현?
-3. **서버 스펙** - 예상 트래픽/사용자 규모?
+1. [ ] claudecodeui 소스 분석
+2. [ ] claude-sdk.ts 핵심 로직 추출/재작성
+3. [ ] /api/agent/query 엔드포인트 구현
+4. [ ] Docker 이미지 빌드 및 배포
 
 ---
 
@@ -644,4 +769,4 @@ Slack 세션 → Canvas UI → 실시간 프리뷰
 
 ---
 
-*v0.3 - Self-host 중심 리서치, 핵심 부품 분석, 의사결정 기록 추가*
+*v0.4 - 구현 방향 확정: Dokploy + 단일서버 + 단일 Repo, 레이어별 추출 부품 명세*
