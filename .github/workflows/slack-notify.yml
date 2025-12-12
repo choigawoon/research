@@ -1,0 +1,65 @@
+name: Slack Notification on Push
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack Notification
+        run: |
+          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+          COMMIT_MESSAGE=$(echo '${{ github.event.head_commit.message }}' | head -1)
+          AUTHOR="${{ github.event.head_commit.author.name }}"
+          BRANCH="${{ github.ref_name }}"
+
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \":rocket: *New Research Commit*\"
+                  }
+                },
+                {
+                  \"type\": \"section\",
+                  \"fields\": [
+                    {
+                      \"type\": \"mrkdwn\",
+                      \"text\": \"*Branch:*\n\`${BRANCH}\`\"
+                    },
+                    {
+                      \"type\": \"mrkdwn\",
+                      \"text\": \"*Author:*\n${AUTHOR}\"
+                    }
+                  ]
+                },
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"*Commit:*\n${COMMIT_MESSAGE}\"
+                  }
+                },
+                {
+                  \"type\": \"actions\",
+                  \"elements\": [
+                    {
+                      \"type\": \"button\",
+                      \"text\": {
+                        \"type\": \"plain_text\",
+                        \"text\": \"View Commit on GitHub\"
+                      },
+                      \"url\": \"${COMMIT_URL}\",
+                      \"style\": \"primary\"
+                    }
+                  ]
+                }
+              ]
+            }" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
